@@ -64,7 +64,7 @@ def treinar_modelos_knn(X_train, X_test, y_train, y_test, ks):
 # =============================================================================
 # 1. CARREGAMENTO E ANÁLISE EXPLORATÓRIA
 # =============================================================================
-df = pd.read_csv("datasetNovo.csv")
+df = pd.read_csv("dataset.csv")
 
 print("=== PRIMEIRAS LINHAS DO DATASET ===")
 print(df.head())
