@@ -10,26 +10,61 @@ import seaborn as sns
 from sklearn.metrics import ConfusionMatrixDisplay, accuracy_score, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.preprocessing import StandardScaler
+
+COLUNA_REGIONAL = "sigla_uf" # "nome_regiao_saude", "sigla_uf", "nome"
+
+def classificar_agua(x):
+    x = str(x)
+    if "utiliza como forma principal" in x:
+        return "Possui e usa"
+    if "Possui" in x:
+        return "Possui mas não usa"
+    return "Não possui"
+
+
+def escolher_features_modelo(coluna_regional):
+    return [coluna_regional]
+
+
+def preparar_dados_modelo(df, features_modelo):
+    X = df[features_modelo].copy()
+    y = df["acesso_agua"].copy()
+
+    for coluna in features_modelo:
+        X[coluna] = X[coluna].fillna("Desconhecido")
+
+    print("\n=== VALORES NULOS NAS FEATURES DO MODELO APÓS TRATAMENTO ===")
+    print(X.isnull().sum())
+
+    X = pd.get_dummies(X, columns=features_modelo)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    scaler = StandardScaler(with_mean=False)
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+    return X_train, X_test, y_train, y_test
+
+
+def treinar_modelos_knn(X_train, X_test, y_train, y_test, ks):
+    resultados = {}
+    for k in ks:
+        modelo = KNeighborsClassifier(n_neighbors=k)
+        modelo.fit(X_train, y_train)
+        y_pred = modelo.predict(X_test)
+        acc = accuracy_score(y_test, y_pred)
+        resultados[k] = {"modelo": modelo, "y_pred": y_pred, "acuracia": acc}
+        nome = "NN (K=1)" if k == 1 else f"KNN (K={k})"
+        print(f"{nome:12s} → Acurácia: {acc * 100:.2f}%")
+    return resultados
+
 
 # =============================================================================
 # 1. CARREGAMENTO E ANÁLISE EXPLORATÓRIA
 # =============================================================================
-df = pd.read_csv("dataset.csv")
-df_municipios = pd.read_csv("br_bd_municipio.csv")
-
-colunas_municipio = [
-    "id_municipio",
-    "sigla_uf",
-    "nome_uf",
-    "nome_regiao",
-    "capital_uf",
-    "nome_regiao_saude",
-    "nome_regiao_imediata",
-    "ddd",
-    "amazonia_legal",
-]
-df = df.merge(df_municipios[colunas_municipio], on="id_municipio", how="left")
+df = pd.read_csv("datasetNovo.csv")
 
 print("=== PRIMEIRAS LINHAS DO DATASET ===")
 print(df.head())
@@ -46,65 +81,40 @@ print(df.info())
 print("\n=== VALORES NULOS POR COLUNA ===")
 print(df.isnull().sum())
 
-print("\n=== ESTATÍSTICAS DESCRITIVAS ===")
-print(df.describe())
+colunas_numericas = df.select_dtypes(include=[np.number]).columns.tolist()
+if colunas_numericas:
+    print("\n=== ESTATÍSTICAS DESCRITIVAS ===")
+    print(df.describe())
 
 print("\n=== CLASSES DO ATRIBUTO-ALVO (tipo_ligacao_rede_geral) ===")
 print(df["tipo_ligacao_rede_geral"].value_counts())
 
-print("\n=== DISTRIBUIÇÃO POR COR/RAÇA ===")
-print(df["cor_raca"].value_counts())
-
-print("\n=== DISTRIBUIÇÃO POR GRUPO DE IDADE ===")
-print(df["grupo_idade"].value_counts())
-
-
 # =============================================================================
 # 2. ENGENHARIA DO ATRIBUTO-ALVO
 # =============================================================================
-def classificar_agua(x):
-    x = str(x)
-    if "utiliza como forma principal" in x:
-        return "Possui e usa"
-    elif "Possui" in x:
-        return "Possui mas não usa"
-    else:
-        return "Não possui"
-
-
 df["acesso_agua"] = df["tipo_ligacao_rede_geral"].apply(classificar_agua)
 
 print("\n=== TARGET COM 3 CLASSES ===")
 print(df["acesso_agua"].value_counts())
 
-# Extração do código UF a partir do ID do município para conferência
-df["codigo_uf"] = df["id_municipio"].astype(str).str[:2].astype(int)
-print("\n=== DISTRIBUIÇÃO POR UF ===")
-print(df["codigo_uf"].value_counts())
+if "sigla_uf" in df.columns:
+    print("\n=== DISTRIBUIÇÃO POR UF ===")
+    print(df["sigla_uf"].value_counts())
 
 print("\n=== DADOS TERRITORIAIS AGREGADOS ===")
-print(df[["nome_regiao_saude"]].head())
+print(df[[COLUNA_REGIONAL]].head())
 
 print("\n=== DICIONÁRIO DE DADOS ===")
 dicionario = {
     "Atributo": [
-        "cor_raca",
-        "grupo_idade",
-        "populacao",
-        "nome_regiao_saude",
+        COLUNA_REGIONAL,
         "acesso_agua",
     ],
     "Tipo": [
         "Categórico",
         "Categórico",
-        "Numérico",
-        "Categórico",
-        "Categórico",
     ],
     "Papel": [
-        "Previsor",
-        "Previsor",
-        "Previsor",
         "Previsor",
         "TARGET",
     ],
@@ -136,76 +146,18 @@ plt.savefig("distribuicao_target.png", dpi=150)
 plt.close()
 print("⚠️  Classes desbalanceadas: 'Possui e usa' representa apenas ~10% dos dados.")
 
-# ---- 3.2 Mapa de calor de correlação ----
-df_corr = df.copy()
-le = LabelEncoder()
-target_encoder = LabelEncoder()
+# ---- 3.2 Distribuição do target por região ----
+dist_regiao = pd.crosstab(
+    df[COLUNA_REGIONAL],
+    df["acesso_agua"],
+    normalize="index",
+).sort_index()
 
-# Preenche valores faltantes para a etapa exploratória.
-df_corr["cor_raca"] = df_corr["cor_raca"].fillna("Desconhecido")
-df_corr["grupo_idade"] = df_corr["grupo_idade"].fillna("Desconhecido")
-df_corr["sigla_uf"] = df_corr["sigla_uf"].fillna("Desconhecido")
-df_corr["nome_regiao"] = df_corr["nome_regiao"].fillna("Desconhecido")
-df_corr["nome_regiao_saude"] = df_corr["nome_regiao_saude"].fillna("Desconhecido")
-df_corr["populacao"] = df_corr["populacao"].fillna(df_corr["populacao"].median())
-df_corr["capital_uf"] = df_corr["capital_uf"].fillna(0)
-df_corr["ddd"] = df_corr["ddd"].fillna(df_corr["ddd"].median())
-df_corr["amazonia_legal"] = df_corr["amazonia_legal"].fillna(0)
-
-df_corr["cor_raca_enc"] = le.fit_transform(df_corr["cor_raca"])
-df_corr["grupo_idade_enc"] = le.fit_transform(df_corr["grupo_idade"])
-df_corr["sigla_uf_enc"] = le.fit_transform(df_corr["sigla_uf"])
-df_corr["nome_regiao_enc"] = le.fit_transform(df_corr["nome_regiao"])
-df_corr["nome_regiao_saude_enc"] = le.fit_transform(df_corr["nome_regiao_saude"])
-df_corr["target_enc"] = target_encoder.fit_transform(df_corr["acesso_agua"])
-
-cols_corr = [
-    "cor_raca_enc",
-    "grupo_idade_enc",
-    "populacao",
-    "sigla_uf_enc",
-    "nome_regiao_enc",
-    "nome_regiao_saude_enc",
-    "capital_uf",
-    "ddd",
-    "amazonia_legal",
-    "target_enc",
-]
-matriz_corr = df_corr[cols_corr].corr()
-
-plt.figure(figsize=(10, 6))
-sns.heatmap(
-    matriz_corr,
-    annot=True,
-    fmt=".2f",
-    cmap="coolwarm",
-    linewidths=0.5,
-    xticklabels=[
-        "Cor/Raça",
-        "Grupo Idade",
-        "População",
-        "UF",
-        "Região",
-        "Região Saúde",
-        "Capital UF",
-        "DDD",
-        "Amazônia Legal",
-        "Target",
-    ],
-    yticklabels=[
-        "Cor/Raça",
-        "Grupo Idade",
-        "População",
-        "UF",
-        "Região",
-        "Região Saúde",
-        "Capital UF",
-        "DDD",
-        "Amazônia Legal",
-        "Target",
-    ],
-)
-plt.title("Mapa de Calor — Correlação entre Features e Target")
+plt.figure(figsize=(12, 8))
+sns.heatmap(dist_regiao, annot=True, fmt=".2f", cmap="YlGnBu", linewidths=0.5)
+plt.title(f"Distribuição do Target por {COLUNA_REGIONAL}")
+plt.xlabel("Classe")
+plt.ylabel(COLUNA_REGIONAL)
 plt.tight_layout()
 plt.savefig("mapa_calor_correlacao.png", dpi=150)
 plt.close()
@@ -213,42 +165,8 @@ plt.close()
 # =============================================================================
 # 4. PRÉ-PROCESSAMENTO E DIVISÃO TREINO/TESTE
 # =============================================================================
-features_modelo = ["cor_raca", "grupo_idade", "nome_regiao_saude", "populacao"]
-
-# Se a população estiver ausente em grande parte das linhas, ela tende a virar
-# mais ruído do que sinal após imputação. Nesse caso, removemos a coluna.
-taxa_nulos_pop = df["populacao"].isnull().mean()
-if taxa_nulos_pop > 0.5:
-    features_modelo.remove("populacao")
-    print(
-        f"\n⚠️  'populacao' removida do modelo por excesso de nulos ({taxa_nulos_pop * 100:.1f}%)."
-    )
-
-X = df[features_modelo].copy()
-y = df["acesso_agua"].copy()
-
-# O KNN não aceita NaN. Para manter o código simples:
-# - categorias faltantes viram "Desconhecido"
-# - população faltante vira a mediana da coluna
-X["cor_raca"] = X["cor_raca"].fillna("Desconhecido")
-X["grupo_idade"] = X["grupo_idade"].fillna("Desconhecido")
-X["nome_regiao_saude"] = X["nome_regiao_saude"].fillna("Desconhecido")
-if "populacao" in X.columns:
-    X["populacao"] = X["populacao"].fillna(X["populacao"].median())
-
-print("\n=== VALORES NULOS NAS FEATURES DO MODELO APÓS TRATAMENTO ===")
-print(X.isnull().sum())
-
-X = pd.get_dummies(X, columns=["cor_raca", "grupo_idade", "nome_regiao_saude"])
-
-# Divisão 80/20 estratificada para manter proporção das classes
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
-
-scaler = StandardScaler(with_mean=False)
-X_train = scaler.fit_transform(X_train)
-X_test = scaler.transform(X_test)
+features_modelo = escolher_features_modelo(COLUNA_REGIONAL)
+X_train, X_test, y_train, y_test = preparar_dados_modelo(df, features_modelo)
 
 nomes_classes = ["Não possui", "Possui e usa", "Possui mas não usa"]
 print(f"\nFeatures usadas no modelo: {features_modelo}")
@@ -258,17 +176,8 @@ print(f"Classes: {nomes_classes}")
 # =============================================================================
 # 5. TREINAMENTO — NN (K=1) e KNN (K=3, 5, 7)
 # =============================================================================
-resultados = {}
 ks = [1, 3, 5, 7]
-
-for k in ks:
-    modelo = KNeighborsClassifier(n_neighbors=k)
-    modelo.fit(X_train, y_train)
-    y_pred = modelo.predict(X_test)
-    acc = accuracy_score(y_test, y_pred)
-    resultados[k] = {"modelo": modelo, "y_pred": y_pred, "acuracia": acc}
-    nome = "NN (K=1)" if k == 1 else f"KNN (K={k})"
-    print(f"{nome:12s} → Acurácia: {acc * 100:.2f}%")
+resultados = treinar_modelos_knn(X_train, X_test, y_train, y_test, ks)
 
 # =============================================================================
 # 6. MATRIZES DE CONFUSÃO
