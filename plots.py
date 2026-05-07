@@ -20,7 +20,7 @@ def plot_distribuicao_target(df, arquivo="distribuicao_target.png"):
     plt.close()
 
 
-def plot_heatmap_regiao(df, coluna_regional, arquivo="mapa_calor_correlacao.png"):
+def plot_heatmap_regiao(df, coluna_regional, arquivo="distribuicao_por_regiao.png"):
     import pandas as pd
 
     dist_regiao = pd.crosstab(

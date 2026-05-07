@@ -5,20 +5,8 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from plots import plot_distribuicao_target, plot_heatmap_regiao, plot_matrizes_confusao
 
-COLUNA_REGIONAL = "sigla_uf"  # opções: "nome_regiao_saude", "sigla_uf", "nome"
-
-
-def classificar_agua(x):
-    x = str(x)
-    if "utiliza como forma principal" in x:
-        return "Possui e usa"
-    if "Possui" in x:
-        return "Possui mas não usa"
-    return "Não possui"
-
-
-def escolher_features_modelo(coluna_regional):
-    return [coluna_regional]
+COLUNA_REGIONAL = "nome_regiao_saude"  # "nome_regiao_saude", "sigla_uf", "nome"
+FEATURES_MODELO = [COLUNA_REGIONAL, "grupo_idade", "cor_raca"]
 
 
 def preparar_dados_modelo(df, features_modelo):
@@ -53,22 +41,14 @@ def treinar_modelos_knn(X_train, X_test, y_train, y_test, ks):
 # -- carregamento --
 df = pd.read_csv("dataset.csv")
 print(f"\n{df.shape[0]} linhas, {df.shape[1]} colunas")
-
-# -- target simplificado em 3 classes --
-df["acesso_agua"] = df["tipo_ligacao_rede_geral"].apply(classificar_agua)
-
 print("\nclasses do target:")
 print(df["acesso_agua"].value_counts().to_string())
 
-if "sigla_uf" in df.columns:
-    print("\namostras por UF:")
-    print(df["sigla_uf"].value_counts().to_string())
-
 # dicionário de atributos usado no modelo
 dicionario = {
-    "Atributo": [COLUNA_REGIONAL, "acesso_agua"],
-    "Tipo": ["Categórico", "Categórico"],
-    "Papel": ["Previsor", "TARGET"],
+    "Atributo": FEATURES_MODELO + ["acesso_agua"],
+    "Tipo": ["Categórico"] * len(FEATURES_MODELO) + ["Categórico"],
+    "Papel": ["Previsor"] * len(FEATURES_MODELO) + ["TARGET"],
 }
 print("\natributos do modelo:")
 print(pd.DataFrame(dicionario).to_string(index=False))
@@ -80,11 +60,10 @@ plot_distribuicao_target(df)
 plot_heatmap_regiao(df, COLUNA_REGIONAL)
 
 # -- pré-processamento --
-features_modelo = escolher_features_modelo(COLUNA_REGIONAL)
-X_train, X_test, y_train, y_test = preparar_dados_modelo(df, features_modelo)
+X_train, X_test, y_train, y_test = preparar_dados_modelo(df, FEATURES_MODELO)
 
 nomes_classes = ["Não possui", "Possui e usa", "Possui mas não usa"]
-print(f"\nfeatures: {features_modelo}")
+print(f"features: {FEATURES_MODELO}")
 print(f"treino: {X_train.shape[0]} | teste: {X_test.shape[0]}")
 
 # -- treinamento --
