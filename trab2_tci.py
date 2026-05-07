@@ -5,7 +5,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from plots import plot_distribuicao_target, plot_heatmap_regiao, plot_matrizes_confusao
 
-COLUNA_REGIONAL = "nome_regiao_saude"  # "nome_regiao_saude", "sigla_uf", "nome"
+COLUNA_REGIONAL = "sigla_uf"  # "nome_regiao_saude", "sigla_uf", "nome"
 FEATURES_MODELO = [COLUNA_REGIONAL, "grupo_idade", "cor_raca"]
 
 
