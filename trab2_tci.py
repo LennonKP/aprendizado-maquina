@@ -1,5 +1,5 @@
 import pandas as pd
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
@@ -83,3 +83,8 @@ for k in ks:
     linhas.append({"Modelo": nome, "Acurácia (%)": f"{acc * 100:.2f}", "": melhor})
 
 print("\n" + pd.DataFrame(linhas).to_string(index=False))
+print("\nclassification report - NN (K=1):")
+print(classification_report(y_test, resultados[1]["y_pred"]))
+
+print(f"\nclassification report - melhor KNN (K={melhor_k}):")
+print(classification_report(y_test, resultados[melhor_k]["y_pred"]))
